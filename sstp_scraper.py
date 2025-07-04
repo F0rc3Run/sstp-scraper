@@ -1,61 +1,62 @@
-import os
 import requests
-from bs4 import BeautifulSoup
+import os
 
-def fetch_sstp_servers():
-    print("[INFO] Fetching VPNGate main page...")
-    url = "https://www.vpngate.net/en/"
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
-    response = requests.get(url, headers=headers, timeout=15)
-    response.raise_for_status()
-    return response.text
+OUTPUT_DIR = "output"
+OUTPUT_FILE = os.path.join(OUTPUT_DIR, "sstp.txt")
 
-def parse_html_for_sstp(html):
-    print("[INFO] Parsing SSTP servers from HTML...")
-    soup = BeautifulSoup(html, "html.parser")
-    table = soup.find("table", {"id": "vg_hosts_table_id"})
-    if not table:
-        print("[ERROR] Table with SSTP info not found.")
+def fetch_vpngate_csv():
+    url = "http://www.vpngate.net/api/iphone/"
+    try:
+        r = requests.get(url, timeout=15)
+        r.raise_for_status()
+        content = r.text
+        return content.splitlines()
+    except Exception as e:
+        print(f"[ERROR] Failed to fetch VPNGate CSV: {e}")
         return []
 
-    sstp_servers = []
-
-    rows = table.find_all("tr")
-    for row in rows:
-        cells = row.find_all("td")
-        if len(cells) < 1:
+def extract_sstp_servers(csv_lines):
+    servers = []
+    # خط اول هدر و خط دوم توضیحات هست، از خط سوم شروع کن
+    for line in csv_lines[2:]:
+        if line.startswith("#") or line.strip() == "":
+            continue
+        fields = line.split(",")
+        # مطمئن شو طول فیلدها کافی است
+        if len(fields) < 15:
             continue
 
-        sstp_cell = None
-        for cell in cells:
-            if "SSTP" in cell.text:
-                sstp_cell = cell
-                break
+        hostname = fields[0].strip()
+        # فیلد 12: LogType (SSTP=4)
+        log_type = fields[11].strip()
+        # فیلد 1: IP
+        ip = fields[1].strip()
+        # فیلد 14: OpenVPN_ConfigData_Base64 ولی برای SSTP باید port رو بگیریم
+        # VPNGate در CSV پورت‌ها را مستقیم نمی‌دهد؛ فرض کنیم همیشه 443 یا پورت SSTP پیش‌فرض است.
+        # چون پورت SSTP معمولاً 443 است، استفاده میکنیم.
 
-        if sstp_cell and "sstp://" in sstp_cell.text.lower():
-            # Try to extract hostname and port from nearby cell
-            host_info = cells[0].text.strip()
-            if ".opengw.net" in host_info:
-                port = "443"  # Default SSTP port if not specified
-                if ':' in host_info:
-                    host_info, port = host_info.split(':', 1)
-                sstp_servers.append(f"{host_info}:{port}")
+        if log_type == "4":  # SSTP
+            # به صورت examplehostname:port ذخیره می‌کنیم، پورت 443 پیش‌فرض SSTP است
+            servers.append(f"{hostname}:443")
 
-    return list(set(sstp_servers))
-
-def save_to_file(servers, path="output/sstp.txt"):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        f.write("\n".join(servers))
-    print(f"[INFO] SSTP server list saved to {path}")
+    return servers
 
 def main():
-    html = fetch_sstp_servers()
-    sstp_servers = parse_html_for_sstp(html)
+    print("[INFO] Fetching VPNGate SSTP servers...")
+    csv_lines = fetch_vpngate_csv()
+    if not csv_lines:
+        print("[ERROR] No CSV data fetched.")
+        return
+
+    sstp_servers = extract_sstp_servers(csv_lines)
     print(f"[INFO] Found {len(sstp_servers)} SSTP servers.")
-    save_to_file(sstp_servers)
+
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    with open(OUTPUT_FILE, "w") as f:
+        for server in sstp_servers:
+            f.write(server + "\n")
+
+    print(f"[INFO] SSTP server list saved to {OUTPUT_FILE}")
 
 if __name__ == "__main__":
     main()
