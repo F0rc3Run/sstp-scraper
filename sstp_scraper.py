@@ -14,13 +14,15 @@ def fetch_vpngate_csv():
 def extract_sstp_servers(csv_lines):
     sstp_servers = []
     for line in csv_lines:
-        fields = list(csv.reader([line]))[0]
-        if len(fields) < 15:
+        if line.startswith('*') or ',' not in line:
             continue
-        host = fields[1]
+        fields = line.split(',')
+        if len(fields) < 16:  # بررسی ایمنی
+            continue
+        hostname = fields[0]
         port = fields[15]
-        if port and port != '0':
-            sstp_servers.append(f"{host}:{port}")
+        if port.strip().isdigit():
+            sstp_servers.append(f"{hostname}:{port.strip()}")
     return sstp_servers
 
 def save_to_files(servers):
