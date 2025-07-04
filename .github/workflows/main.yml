@@ -2,35 +2,33 @@ name: Auto Update SSTP Servers
 
 on:
   schedule:
-    - cron: "0 */12 * * *"  # Every 12 hours
+    - cron: '0 */12 * * *'  # هر ۱۲ ساعت اجرا میشه
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   update:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v3
 
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
-      - name: Install requests
-        run: pip install requests
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
 
-      - name: Run SSTP Scraper
+      - name: Run SSTP scraper script
         run: python sstp_scraper.py
 
-      - name: Commit and push
+      - name: Commit and push updated configs
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add sstp_servers.txt bot_data/sstp.txt
-          git commit -m "🔄 Update SSTP server list" || echo "No changes"
+          git add output/sstp.txt
+          git commit -m "🔄 Update SSTP servers list" || echo "No changes to commit"
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
