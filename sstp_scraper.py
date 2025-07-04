@@ -16,13 +16,16 @@ def extract_sstp_servers(csv_lines):
     for line in csv_lines:
         if line.startswith('*') or ',' not in line:
             continue
-        fields = line.split(',')
-        if len(fields) < 16:  # بررسی ایمنی
+        fields = line.strip().split(',')
+        if len(fields) < 15:
             continue
+
         hostname = fields[0]
-        port = fields[15]
-        if port.strip().isdigit():
-            sstp_servers.append(f"{hostname}:{port.strip()}")
+        sstp_support = fields[14].strip()  # ستون 14 = SSTP support (0 or 1)
+
+        if sstp_support == '1':
+            sstp_servers.append(f"{hostname}:443")  # پورت پیش‌فرض SSTP
+
     return sstp_servers
 
 def save_to_files(servers):
