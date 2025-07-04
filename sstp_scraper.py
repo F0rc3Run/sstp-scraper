@@ -1,64 +1,61 @@
+import os
 import requests
 from bs4 import BeautifulSoup
-import os
 
-OUTPUT_FILE = "output/sstp.txt"
-URL = "https://www.vpngate.net/en/"
-
-def fetch_html(url):
+def fetch_sstp_servers():
     print("[INFO] Fetching VPNGate main page...")
-    try:
-        res = requests.get(url, timeout=15)
-        res.raise_for_status()
-        return res.text
-    except Exception as e:
-        print(f"[ERROR] Failed to fetch {url}: {e}")
-        return None
+    url = "https://www.vpngate.net/en/"
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+    response = requests.get(url, headers=headers, timeout=15)
+    response.raise_for_status()
+    return response.text
 
-def parse_sstp_servers(html):
+def parse_html_for_sstp(html):
     print("[INFO] Parsing SSTP servers from HTML...")
     soup = BeautifulSoup(html, "html.parser")
-
     table = soup.find("table", {"id": "vg_hosts_table_id"})
     if not table:
-        print("[ERROR] Could not find servers table in page.")
+        print("[ERROR] Table with SSTP info not found.")
         return []
 
-    servers = []
+    sstp_servers = []
 
-    # جدول سرورها، هر ردیف (tr) یک سرور است، ردیف اول هدر جدول است
-    rows = table.find_all("tr")[1:]
-
+    rows = table.find_all("tr")
     for row in rows:
-        cols = row.find_all("td")
-        if len(cols) < 15:
+        cells = row.find_all("td")
+        if len(cells) < 1:
             continue
 
-        hostname = cols[1].get_text(strip=True)
-        sstp_supported = cols[11].get_text(strip=True)  # ستون LogType (یا ستون SSTP اگر متفاوت است)
+        sstp_cell = None
+        for cell in cells:
+            if "SSTP" in cell.text:
+                sstp_cell = cell
+                break
 
-        # در صفحه VPNGate ستون 12 (index 11) برای پروتکل‌ها نیست اما ستون 14 یا 15 مربوط به پروتکل‌هاست.
-        # بررسی می‌کنیم ستون 13 (index 12) که پروتکل‌ها رو نمایش میده:
-        protocols_text = cols[12].get_text(strip=True).lower()
-        if 'sstp' in protocols_text:
-            port = 443  # پورت پیش‌فرض SSTP معمولاً 443 است
-            servers.append(f"{hostname}:{port}")
+        if sstp_cell and "sstp://" in sstp_cell.text.lower():
+            # Try to extract hostname and port from nearby cell
+            host_info = cells[0].text.strip()
+            if ".opengw.net" in host_info:
+                port = "443"  # Default SSTP port if not specified
+                if ':' in host_info:
+                    host_info, port = host_info.split(':', 1)
+                sstp_servers.append(f"{host_info}:{port}")
 
-    return servers
+    return list(set(sstp_servers))
 
-def save_servers(servers, filepath):
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    with open(filepath, "w") as f:
+def save_to_file(servers, path="output/sstp.txt"):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
         f.write("\n".join(servers))
-    print(f"[INFO] SSTP server list saved to {filepath}")
+    print(f"[INFO] SSTP server list saved to {path}")
 
 def main():
-    html = fetch_html(URL)
-    if not html:
-        return
-    sstp_servers = parse_sstp_servers(html)
+    html = fetch_sstp_servers()
+    sstp_servers = parse_html_for_sstp(html)
     print(f"[INFO] Found {len(sstp_servers)} SSTP servers.")
-    save_servers(sstp_servers, OUTPUT_FILE)
+    save_to_file(sstp_servers)
 
 if __name__ == "__main__":
     main()
