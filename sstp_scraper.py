@@ -1,61 +1,64 @@
 import requests
+from bs4 import BeautifulSoup
 import os
 
-def fetch_vpngate_csv():
-    url = "http://www.vpngate.net/api/iphone/"
+OUTPUT_FILE = "output/sstp.txt"
+URL = "https://www.vpngate.net/en/"
+
+def fetch_html(url):
+    print("[INFO] Fetching VPNGate main page...")
     try:
-        response = requests.get(url, timeout=15)
-        response.raise_for_status()
-        return response.text.splitlines()
+        res = requests.get(url, timeout=15)
+        res.raise_for_status()
+        return res.text
     except Exception as e:
-        print(f"[ERROR] Cannot fetch VPNGate CSV: {e}")
+        print(f"[ERROR] Failed to fetch {url}: {e}")
+        return None
+
+def parse_sstp_servers(html):
+    print("[INFO] Parsing SSTP servers from HTML...")
+    soup = BeautifulSoup(html, "html.parser")
+
+    table = soup.find("table", {"id": "vg_hosts_table_id"})
+    if not table:
+        print("[ERROR] Could not find servers table in page.")
         return []
 
-def debug_csv_header_and_sample(csv_lines):
-    print("[DEBUG] Showing CSV sample row to identify SSTP column index...")
-    for line in csv_lines:
-        if line.startswith('*') or ',' not in line:
-            continue
-        fields = line.strip().split(',')
-        print(f"[DEBUG] Sample row with {len(fields)} fields:")
-        for idx, val in enumerate(fields):
-            print(f"  [{idx}] {val}")
-        break
+    servers = []
 
-def extract_sstp_servers(csv_lines):
-    sstp_servers = []
-    for line in csv_lines:
-        if line.startswith('*') or ',' not in line:
+    # جدول سرورها، هر ردیف (tr) یک سرور است، ردیف اول هدر جدول است
+    rows = table.find_all("tr")[1:]
+
+    for row in rows:
+        cols = row.find_all("td")
+        if len(cols) < 15:
             continue
-        fields = line.strip().split(',')
-        if len(fields) < 15:
-            continue
-        hostname = fields[0]
-        try:
-            sstp_support = fields[14].strip()  # ممکنه نیاز باشه این عدد رو تغییر بدی بعد از debug
-        except IndexError:
-            continue
-        if sstp_support == '1':
-            sstp_servers.append(f"{hostname}:443")
-    return sstp_servers
+
+        hostname = cols[1].get_text(strip=True)
+        sstp_supported = cols[11].get_text(strip=True)  # ستون LogType (یا ستون SSTP اگر متفاوت است)
+
+        # در صفحه VPNGate ستون 12 (index 11) برای پروتکل‌ها نیست اما ستون 14 یا 15 مربوط به پروتکل‌هاست.
+        # بررسی می‌کنیم ستون 13 (index 12) که پروتکل‌ها رو نمایش میده:
+        protocols_text = cols[12].get_text(strip=True).lower()
+        if 'sstp' in protocols_text:
+            port = 443  # پورت پیش‌فرض SSTP معمولاً 443 است
+            servers.append(f"{hostname}:{port}")
+
+    return servers
+
+def save_servers(servers, filepath):
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    with open(filepath, "w") as f:
+        f.write("\n".join(servers))
+    print(f"[INFO] SSTP server list saved to {filepath}")
 
 def main():
-    print("[INFO] Fetching VPNGate SSTP servers...")
-    csv_lines = fetch_vpngate_csv()
-    if not csv_lines:
-        print("[ERROR] No CSV data received.")
+    html = fetch_html(URL)
+    if not html:
         return
-
-    debug_csv_header_and_sample(csv_lines)  # فقط برای یک‌بار بررسی، بعداً می‌تونی پاکش کنی
-
-    sstp_servers = extract_sstp_servers(csv_lines)
+    sstp_servers = parse_sstp_servers(html)
     print(f"[INFO] Found {len(sstp_servers)} SSTP servers.")
-
-    os.makedirs("output", exist_ok=True)
-    with open("output/sstp.txt", "w") as f:
-        f.write("\n".join(sstp_servers))
-
-    print("[INFO] SSTP server list saved to output/sstp.txt")
+    save_servers(sstp_servers, OUTPUT_FILE)
 
 if __name__ == "__main__":
     main()
